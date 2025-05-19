@@ -1,0 +1,241 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use App\Models\Page;
+use App\Models\Category;
+use App\Models\Blog;
+use App\Models\ProductCategory;
+use App\Models\MostPurchased;
+use App\Models\ProductPriceVariation;
+use App\Models\Product;
+use App\Models\Country;
+use App\Models\Brand;
+use App\Models\Review;
+
+
+class FrontController extends Controller
+{
+
+    public function notFound(){
+     
+        return abort(404);
+        return  redirect()->away('https://medi-express.prismcloudhosting.com/404.html');
+
+    }
+
+
+
+    public function home()
+    {
+        $home = Page::where('identifier', 'home')->first();
+        return parent::returnData($home, 200);
+    }
+
+    public function about()
+    {
+        $about = Page::where('identifier', 'about')->first();
+        return parent::returnData($about, 200);
+    }
+
+    public function privacyPolicy()
+    {
+
+        $privacyPolicy = Page::where('identifier', 'privacy-policy')->first();
+        return parent::returnData($privacyPolicy, 200);
+    }
+
+    public function faq()
+    {
+        $faqs = Page::where('identifier', 'faqs')->first();
+        return parent::returnData($faqs, 200);
+    }
+    
+    public function saleDisc()
+    {
+        $saleDisc = Page::where('identifier', 'sale-disc')->first();
+        return parent::returnData($saleDisc, 200);
+    }
+
+    public function delivery()
+    {
+
+        $delivery = Page::where('identifier', 'delivery')->first();
+        return parent::returnData($delivery, 200);
+    }
+
+    public function termsCondition()
+    {
+
+        $termsCondition = Page::where('identifier', 'terms-and-conditions')->first();
+        return parent::returnData($termsCondition, 200);
+    }
+
+    public function clientReview()
+    {
+
+        $client = Page::where('identifier', 'client-review')->first();
+        return parent::returnData($client, 200);
+    }
+
+    public function blog()
+    {
+
+        $blog = Blog::select('id',  'title', 'featured_img', 'short_description', 'featured_img', 'route', 'created_at')->get()->take(6);
+        return parent::returnData($blog, 200);
+    }
+
+    public function blogDetail($route)
+    {
+        $blog = Blog::where('route', $route)->first();
+        return parent::returnData($blog, 200);
+    }
+
+    public function recentBlog()
+    {
+        $blog = Blog::select('id', 'title',  'featured_img', 'route', 'created_at')->with('comments')->get()->random(5);
+        return parent::returnData($blog, 200);
+    }
+
+    public function blogFilter($id)
+    {
+
+        $blog = Blog::where('category_id', $id)->select('id', 'title', 'sub_title', 'featured_img', 'description', 'route', 'created_at')->get();
+        return parent::returnData($blog, 200);
+    }
+
+    public function blogSearch(Request $request)
+    {
+
+        $blog = Blog::orWhere('title', 'LIKE', '%' . $request->keyword . '%')
+            ->orWhere('short_description', 'LIKE', '%' . $request->keyword . '%')
+            ->select('id', 'title',  'featured_img',  'short_description', 'route', 'created_at')
+            ->orderBy('id', 'DESC')
+            ->get()->take(6);
+
+        return parent::returnData($blog, 200);
+    }
+
+    public function mostPurchasedProduct(Request $request)
+    {
+        $countryId = Country::where('name' , $request->country_id)->pluck('id');
+        $mostPurchasedProductIds = MostPurchased::where('country_id', $countryId)
+                                        ->pluck('product_id')
+                                        ->unique();
+        
+                                       
+
+
+        $products = Product::whereIn('id', $mostPurchasedProductIds)
+                        ->with(['category', 'price' => function ($q) use ($request ,$countryId) {
+                            $q->where('country_id' , $countryId);
+                            $q->with(['country' => function ($q) use ($request, $countryId) {
+                                $q->where('id', $countryId)
+                                    ->select('id', 'name', 'currency');
+                            }])->select('id', 'product_id', 'country_id', 'actual_price' ,'sale_price');
+                        }])
+                        ->select('id', 'name', 'route', 'featured_img')
+                        ->get();
+       
+
+        $allPricesEmpty = $products->every(function ($product) {
+            return $product->price->isEmpty();
+        });
+
+        if ($allPricesEmpty) {
+            
+             $mostPurchasedProductIds = MostPurchased::where('country_id', 13)
+                                        ->pluck('product_id')
+                                        ->unique();
+            
+            $products = Product::whereIn('id', $mostPurchasedProductIds)
+                            ->with(['category', 'price' => function ($q) use ($request) {
+                            $q->where('country_id' ,  13)->with(['country' => function ($q) use ($request) {
+                                $q->select('id', 'name', 'currency');
+                            }])->select('id', 'product_id', 'country_id', 'actual_price' ,'sale_price');
+                        }])
+                        ->select('id', 'name', 'route', 'featured_img')
+                        ->get();
+        
+
+        }
+         if ($products->isNotEmpty()) {
+            $reviews = Review::whereIn('product_id', $mostPurchasedProductIds)
+                            ->where('status', 1)
+                            ->get();
+            $totalReviews = $reviews->count();
+            $averageRating = $totalReviews > 0 ? $reviews->sum('rating') / $totalReviews : 0;
+
+            $products->each(function ($product) use ($averageRating) {
+                $product->review = $averageRating;
+            });
+
+            $data = $products;
+        }
+        
+        return parent::returnData($data, 200);
+
+    }
+
+    public function topBrand()
+    {
+
+        $top = Brand::where('top', 1)->get();
+        return parent::returnData($top, 200);
+    }
+
+
+    public function globalSearch(Request $request)
+    {
+        $product = Product::select('id','name',  'route')
+                                ->where('name', 'like', '%' . $request->get('query') . '%')
+                                ->with('category', function ($q) {
+                                    $q->get();
+                                })->get();
+        $category = Category::select('name', 'route' ,'id')->where('name', 'like', '%' . $request->get('query') . '%')->first();
+        if($category != null){
+            
+            $products = ProductCategory::where('category_id' , $category['id'])->with('products' , function ($q) {
+                    $q->select('id','name' , 'route')->with('category');
+                    
+            })->get();
+            foreach($products as $key => $value){
+
+                $product[$key] = $value['products'];
+
+            }
+           
+
+        }
+        return response()->json(['products' => $product, 'category' => $category]);
+    }
+
+    public function promotion(Request $request){
+        $countryId = Country::where('name' , $request->name)->pluck('id');
+        $id = ProductPriceVariation::where('country_id',$countryId)->whereNotNull('sale_price')->pluck('product_id');
+        $products = Product::whereIn('id', $id )->with('category')->with('price' , function ($q) use ($countryId){
+            $q->where('country_id' , $countryId)->select('id','product_id','country_id', 'actual_price','sale_price' ,'deal_price')->with('country:id,name,currency')->get();
+        })->select('id','name','route','featured_img')->get();
+        $data = [];
+        if ($products->isNotEmpty()) {
+            $reviews = Review::whereIn('product_id', $id)
+                            ->where('status', 1)
+                            ->get();
+            $totalReviews = $reviews->count();
+            $averageRating = $totalReviews > 0 ? $reviews->sum('rating') / $totalReviews : 0;
+
+            $products->each(function ($product) use ($averageRating) {
+                $product->review = $averageRating;
+            });
+
+            $data = $products;
+        }
+        return parent::returnData($data, 200);
+
+    }
+
+
+  
+
+}
