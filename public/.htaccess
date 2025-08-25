@@ -1,4 +1,8 @@
 <IfModule mod_rewrite.c>
+# --- Exclude Laravel API from WordPress rewrites ---
+RewriteCond %{REQUEST_URI} ^/MediExpress_APIs/public/ [NC]
+RewriteRule ^ - [L]
+# ---------------------------------------------------
 
 
     RewriteEngine On

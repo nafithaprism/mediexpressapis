@@ -2,6 +2,7 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\DiscountController; // ← add this use
 
 
 Route::get('clear-cache', 'CacheController@clearCache');
@@ -124,6 +125,15 @@ Route::post('forget-password', 'UserController@forgetPassword');
 # End Forget Password
 
 
+    Route::post('discounts/apply', [DiscountController::class, 'apply'])
+    ->name('discounts.apply');
+
+// Admin / Staff (protect as you prefer: Sanctum/Passport)
+Route::middleware('auth:sanctum')->group(function () {
+    // Full CRUD (index, store, show, update, destroy)
+    Route::apiResource('discounts', DiscountController::class);
+});
+
 Route::group(['prefix' => 'auth'], function ($router) {
 
     Route::get('/cards', 'DashboardController@cards');
@@ -232,6 +242,7 @@ Route::group(['prefix' => 'auth'], function ($router) {
     Route::delete('delete-addresses/{id}', 'UserController@deleteAddress')->middleware('auth:sanctum');
     Route::post('update-addresses', 'UserController@updateAddress')->middleware('auth:sanctum');
     Route::get('view-addresses/{id}', 'UserController@viewAddress')->middleware('auth:sanctum');
+
 
 });
 
