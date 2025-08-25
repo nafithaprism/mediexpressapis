@@ -246,6 +246,15 @@ Route::group(['prefix' => 'auth'], function ($router) {
 
 });
 
+
+Route::get('/v1/health', function () {
+    return response()->json([
+        'status' => 'ok',
+        'time' => now()->toIso8601String(),
+    ]);
+});
+
+
 Route::fallback(function () {
     return response()->json(['message' => 'Invalid    Route'], 400);
 });
