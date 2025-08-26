@@ -4,34 +4,90 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\DiscountController; 
 
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+
 Route::get('health/rds-tcp', function () {
-    $host = env('DB_HOST');
-    $port = (int) env('DB_PORT', 3306);
-    $errno = $errstr = null;
+    $host  = env('DB_HOST');
+    $port  = (int) env('DB_PORT', 3306);
+    $errno = null;
+    $errstr = null;
 
+    // Add some context that will appear on every following Log:: calls
+    Log::withContext([
+        'route' => 'health/rds-tcp',
+        'aws_trace' => request()->header('x-amzn-trace-id'),
+        'client_ip' => request()->ip(),
+        'db_host' => $host,
+        'db_port' => $port,
+    ]);
+
+    $start = microtime(true);
     $okExt = extension_loaded('pdo_mysql');
-    $okTcp = @fsockopen($host, $port, $errno, $errstr, 2) !== false;
+    $sock  = @fsockopen($host, $port, $errno, $errstr, 2.0);
+    $okTcp = $sock !== false;
+    if ($okTcp) {
+        fclose($sock);
+    }
+    $ms = (int) ((microtime(true) - $start) * 1000);
 
-    return response()->json([
-        'ok'      => $okExt && $okTcp,
+    Log::info('TCP check completed', [
         'pdo_mysql_loaded' => $okExt,
         'tcp_connect_3306' => $okTcp,
-        'host'    => $host,
-        'port'    => $port,
-        'error'   => $okTcp ? null : "$errno $errstr",
+        'latency_ms' => $ms,
+        'error' => $okTcp ? null : "{$errno} {$errstr}",
+    ]);
+
+    return response()->json([
+        'ok'               => $okExt && $okTcp,
+        'pdo_mysql_loaded' => $okExt,
+        'tcp_connect_3306' => $okTcp,
+        'host'             => $host,
+        'port'             => $port,
+        'latency_ms'       => $ms,
+        'error'            => $okTcp ? null : "{$errno} {$errstr}",
     ], $okExt && $okTcp ? 200 : 500);
 });
 
-
 Route::get('health/db', function () {
+    Log::withContext([
+        'route' => 'health/db',
+        'aws_trace' => request()->header('x-amzn-trace-id'),
+        'client_ip' => request()->ip(),
+    ]);
+
+    $start = microtime(true);
     try {
         DB::connection()->getPdo();
         $ver = DB::select('select version() as v')[0]->v ?? null;
-        return response()->json(['ok' => true, 'version' => $ver], 200);
+        $ms  = (int) ((microtime(true) - $start) * 1000);
+
+        Log::info('DB connection OK', [
+            'version' => $ver,
+            'latency_ms' => $ms,
+            // Safe to log: database host/name; avoid password/user if you prefer
+            'db_host' => env('DB_HOST'),
+            'db_name' => env('DB_DATABASE'),
+        ]);
+
+        return response()->json(['ok' => true, 'version' => $ver, 'latency_ms' => $ms], 200);
     } catch (\Throwable $e) {
-        return response()->json(['ok' => false, 'error' => $e->getMessage()], 500);
+        $ms = (int) ((microtime(true) - $start) * 1000);
+
+        Log::error('DB connection FAILED', [
+            'latency_ms' => $ms,
+            'error' => $e->getMessage(),
+            'code'  => $e->getCode(),
+            // If needed during debugging, you can include a short trace (be careful with size):
+            // 'trace' => substr($e->getTraceAsString(), 0, 2000),
+            'db_host' => env('DB_HOST'),
+            'db_name' => env('DB_DATABASE'),
+        ]);
+
+        return response()->json(['ok' => false, 'error' => $e->getMessage(), 'latency_ms' => $ms], 500);
     }
 });
+
 
 
 Route::get('clear-cache', 'CacheController@clearCache');
