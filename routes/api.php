@@ -2,7 +2,7 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\DiscountController; // ← add this use
+use App\Http\Controllers\DiscountController; 
 
 
 Route::get('clear-cache', 'CacheController@clearCache');
@@ -124,9 +124,13 @@ Route::get('country/{route}', 'CountryController@country');
 Route::post('forget-password', 'UserController@forgetPassword');
 # End Forget Password
 
-
-    Route::post('discounts/apply', [DiscountController::class, 'apply'])
+Route::post('discounts/apply', [DiscountController::class, 'apply'])
     ->name('discounts.apply');
+
+// Admin CRUD (protect as needed)
+Route::middleware('auth:sanctum')->group(function () {
+    Route::apiResource('discounts', DiscountController::class);
+});
 
 // Admin / Staff (protect as you prefer: Sanctum/Passport)
 Route::middleware('auth:sanctum')->group(function () {
@@ -249,7 +253,7 @@ Route::group(['prefix' => 'auth'], function ($router) {
 
 Route::get('/v1/health', function () {
     return response()->json([
-        'status' => 'ok',
+        'status' => 'ok hello',
         'time' => now()->toIso8601String(),
     ]);
 });
