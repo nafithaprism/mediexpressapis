@@ -4,6 +4,35 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\DiscountController; 
 
+Route::get('health/rds-tcp', function () {
+    $host = env('DB_HOST');
+    $port = (int) env('DB_PORT', 3306);
+    $errno = $errstr = null;
+
+    $okExt = extension_loaded('pdo_mysql');
+    $okTcp = @fsockopen($host, $port, $errno, $errstr, 2) !== false;
+
+    return response()->json([
+        'ok'      => $okExt && $okTcp,
+        'pdo_mysql_loaded' => $okExt,
+        'tcp_connect_3306' => $okTcp,
+        'host'    => $host,
+        'port'    => $port,
+        'error'   => $okTcp ? null : "$errno $errstr",
+    ], $okExt && $okTcp ? 200 : 500);
+});
+
+
+Route::get('health/db', function () {
+    try {
+        DB::connection()->getPdo();
+        $ver = DB::select('select version() as v')[0]->v ?? null;
+        return response()->json(['ok' => true, 'version' => $ver], 200);
+    } catch (\Throwable $e) {
+        return response()->json(['ok' => false, 'error' => $e->getMessage()], 500);
+    }
+});
+
 
 Route::get('clear-cache', 'CacheController@clearCache');
 Route::post('uploads', 'UploadController@upload_media');
