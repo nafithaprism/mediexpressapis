@@ -13,6 +13,8 @@ RUN composer dump-autoload -o --classmap-authoritative --no-scripts
 # ---------- Runtime: PHP-FPM on Lambda (Bref) ----------
 FROM bref/php-82-fpm:2 AS production  
 
+RUN docker-php-ext-install pdo_mysql
+
 # Copy app into Lambda task dir
 COPY --from=vendor /app /var/task
 
