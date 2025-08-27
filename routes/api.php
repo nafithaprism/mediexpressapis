@@ -14,6 +14,7 @@ Route::get('health/rds-tcp', function () {
     $errstr = null;
 
     // Add some context that will appear on every following Log:: calls
+    //hello
     Log::withContext([
         'route' => 'health/rds-tcp',
         'aws_trace' => request()->header('x-amzn-trace-id'),
