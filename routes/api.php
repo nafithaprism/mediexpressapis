@@ -7,6 +7,7 @@ use App\Http\Controllers\DiscountController;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
+
 Route::get('health/rds-tcp', function () {
     $host  = env('DB_HOST');
     $port  = (int) env('DB_PORT', 3306);
@@ -90,6 +91,15 @@ Route::get('health/db', function () {
 });
 
 
+
+Route::get('/health/ping', function () {
+    return response()->json([
+        'ok' => true,
+        'app' => config('app.name', 'laravel'),
+        'env' => config('app.env'),
+        'time' => now()->toIso8601String(),
+    ]);
+});
 
 Route::get('clear-cache', 'CacheController@clearCache');
 Route::post('uploads', 'UploadController@upload_media');

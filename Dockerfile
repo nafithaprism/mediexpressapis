@@ -13,7 +13,7 @@ RUN composer install \
     --no-progress \
     --no-scripts
 
-# Copy the rest of the app
+# Copy the rest of the application
 COPY . .
 RUN composer dump-autoload -o --classmap-authoritative --no-scripts
 
@@ -21,28 +21,24 @@ RUN composer dump-autoload -o --classmap-authoritative --no-scripts
 # ================================================
 # Stage 2: Build Laravel caches & manifests (CLI)
 # ================================================
-# We'll use the same PHP runtime image; it includes PHP CLI.
 FROM bref/php-82-fpm:2 AS cache
 WORKDIR /var/task
 
-# Bring the built app into this stage
+# Copy app from vendor stage
 COPY --from=vendor /app /var/task
 
-# Ensure cache dir exists (we'll pre-generate files so Laravel won't write at runtime)
-RUN mkdir -p bootstrap/cache
-
-# Run package discovery to generate bootstrap/cache/packages.php/services.php.
-# If artisan fails (e.g., missing env), we still create empty, valid cache files.
-# NOTE: We force production-like mode to avoid Whoops.
+# Set prod env so artisan doesn’t try debug things
 ENV APP_ENV=production
 ENV APP_DEBUG=false
 
-# Try to build package manifest; fall back to empty files if artisan isn't runnable
-RUN php artisan package:discover --ansi || true \
+# Ensure cache dir exists
+RUN mkdir -p bootstrap/cache \
+ && php artisan package:discover --ansi || true \
  && test -f bootstrap/cache/packages.php || php -r 'file_put_contents("bootstrap/cache/packages.php","<?php return [];");' \
  && test -f bootstrap/cache/services.php || php -r 'file_put_contents("bootstrap/cache/services.php","<?php return [];");'
 
-# (Optional) If your app allows it without DB, you can also pre-cache config/routes/views:
+# (Optional) You can also pre-build config/routes/views caches if your app
+# can run artisan without DB connections:
 # RUN php artisan config:cache || true
 # RUN php artisan route:cache  || true
 # RUN php artisan view:cache   || true
@@ -54,11 +50,11 @@ RUN php artisan package:discover --ansi || true \
 FROM bref/php-82-fpm:2 AS production
 WORKDIR /var/task
 
-# Copy the fully prepared app (with vendor + cache files)
+# Copy fully prepared app from cache stage
 COPY --from=cache /var/task /var/task
 
-# Final safety: the folder exists (it will be read-only at runtime, that's OK)
+# Ensure bootstrap/cache exists (will already contain files from cache stage)
 RUN mkdir -p bootstrap/cache
 
-# Bref FPM expects your Laravel front controller
+# Bref FPM entry point = Laravel front controller
 CMD ["public/index.php"]
