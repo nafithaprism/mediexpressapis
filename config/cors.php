@@ -1,43 +1,3 @@
-// <?php
-
-// return [
-//     'paths' => ['v1/*', 'api/*', 'sanctum/csrf-cookie'],
-//     'allowed_methods' => ['*'],
-//     'allowed_origins' => ['*'],
-//     'allowed_origins_patterns' => ['*'],
-//     'allowed_headers' => [''],
-//     'exposed_headers' => [],
-//     'max_age' => 0,
-//     'supports_credentials' => false,
-
-// ];
-
-// <?php
-
-// return [
-//     'paths' => ['v1/', 'api/', 'sanctum/csrf-cookie'],
-
-//     'allowed_methods' => ['*'],
-
-//     'allowed_origins' => [
-//         'https://medi-express.prismcloudhosting.com',
-//         'https://cms-medi-express.prismcloudhosting.com',
-//     ],
-
- 
-//     'allowed_origins_patterns' => [],
-
-  
-//     'allowed_headers' => ['*'],
-
-//     'exposed_headers' => [],
-//     'max_age' => 86400, 
-//     'supports_credentials' => false,
-// ];
-
-
-
-
 <?php
 
 return [
@@ -47,6 +7,9 @@ return [
     'allowed_methods' => ['*'],
 
     'allowed_origins' => [
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+        'http://localhost:3000',
         'https://medi-express.prismcloudhosting.com',
         'https://cms-medi-express.prismcloudhosting.com',
     ],
@@ -60,4 +23,3 @@ return [
     'max_age' => 86400,
     'supports_credentials' => false,
 ];
-

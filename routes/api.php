@@ -2,7 +2,7 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\DiscountController; 
+use App\Http\Controllers\DiscountController;
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -51,46 +51,6 @@ Route::get('health/rds-tcp', function () {
     ], $okExt && $okTcp ? 200 : 500);
 });
 
-Route::get('health/db', function () {
-    Log::withContext([
-        'route' => 'health/db',
-        'aws_trace' => request()->header('x-amzn-trace-id'),
-        'client_ip' => request()->ip(),
-    ]);
-
-    $start = microtime(true);
-    try {
-        DB::connection()->getPdo();
-        $ver = DB::select('select version() as v')[0]->v ?? null;
-        $ms  = (int) ((microtime(true) - $start) * 1000);
-
-        Log::info('DB connection OK', [
-            'version' => $ver,
-            'latency_ms' => $ms,
-            // Safe to log: database host/name; avoid password/user if you prefer
-            'db_host' => env('DB_HOST'),
-            'db_name' => env('DB_DATABASE'),
-        ]);
-
-        return response()->json(['ok' => true, 'version' => $ver, 'latency_ms' => $ms], 200);
-    } catch (\Throwable $e) {
-        $ms = (int) ((microtime(true) - $start) * 1000);
-
-        Log::error('DB connection FAILED', [
-            'latency_ms' => $ms,
-            'error' => $e->getMessage(),
-            'code'  => $e->getCode(),
-            // If needed during debugging, you can include a short trace (be careful with size):
-            // 'trace' => substr($e->getTraceAsString(), 0, 2000),
-            'db_host' => env('DB_HOST'),
-            'db_name' => env('DB_DATABASE'),
-        ]);
-
-        return response()->json(['ok' => false, 'error' => $e->getMessage(), 'latency_ms' => $ms], 500);
-    }
-});
-
-
 
 Route::get('/health/ping', function () {
     return response()->json([
@@ -132,7 +92,7 @@ Route::post('brands', 'BrandController@store')->middleware('auth:sanctum');
 Route::get('brands/{brand}', 'BrandController@show');
 Route::delete('brands/{brand}', 'BrandController@destroy')->middleware('auth:sanctum');
 
-#Product 
+#Product
 Route::get('products', 'ProductController@index');
 Route::post('products', 'ProductController@store')->middleware('auth:sanctum');
 Route::get('products/{route}', 'ProductController@show');
@@ -165,7 +125,7 @@ Route::delete('child-categories/{route}', 'ChildCategoryController@destroy')->mi
 #End Product
 
 
-#Front 
+#Front
 Route::get('not-found', 'FrontController@notFound');
 Route::get('home', 'FrontController@home');
 Route::post('global-search', 'FrontController@globalSearch');
@@ -266,7 +226,7 @@ Route::group(['prefix' => 'auth'], function ($router) {
     Route::post('deals', 'DealController@store')->middleware('auth:sanctum');
     Route::get('deals/{id}', 'DealController@show')->middleware('auth:sanctum');
     Route::put('change-deal-status/{id}', 'DealController@changeStatus')->middleware('auth:sanctum');
-    
+
     #Faqs
     Route::get('faqs', 'FaqController@index')->middleware('auth:sanctum');
     Route::post('faqs', 'FaqController@store')->middleware('auth:sanctum');
@@ -317,7 +277,7 @@ Route::group(['prefix' => 'auth'], function ($router) {
     Route::delete('most-purchased/{id}', 'MostPurchasedController@destroy')->middleware('auth:sanctum');
     Route::get('most-purchased-products-drop-down/{id}', 'MostPurchasedController@mostPurchasedProductsDropDown')->middleware('auth:sanctum');
 
-    #Coupons 
+    #Coupons
     Route::get('coupons', 'CouponController@index');
     Route::post('coupons', 'CouponController@store')->middleware('auth:sanctum');
     Route::get('coupons/{id}', 'CouponController@show');
@@ -330,7 +290,7 @@ Route::group(['prefix' => 'auth'], function ($router) {
     Route::post('order-filter', 'DashboardController@orderFilter')->middleware('auth:sanctum');
     Route::post('send-tracking-number', 'DashboardController@sendTracking')->middleware('auth:sanctum');
 
-    #Order 
+    #Order
     Route::post('make-order', 'OrderController@order');
     Route::get('orders/{id}', 'OrderController@index')->middleware('auth:sanctum');
     Route::get('order-detail/{id}', 'OrderController@orderDetail')->middleware('auth:sanctum');
