@@ -33,6 +33,20 @@ if (file_exists($maintenance = __DIR__.'/../storage/framework/maintenance.php'))
 
 require __DIR__.'/../vendor/autoload.php';
 
+
+
+/* --- BEGIN: force CORS early (works even on 500s) --- */
+$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+$allowed = [
+    'https://medi-express.prismcloudhosting.com',
+    'https://cms-medi-express.prismcloudhosting.com',
+];
+if ($origin && in_array($origin, $allowed, true)) {
+    header('Access-Control-Allow-Origin: ' . $origin);
+    header('Vary: Origin');
+}
+/* --- END: force CORS early --- */
+
 /*
 |--------------------------------------------------------------------------
 | Run The Application
