@@ -4,13 +4,19 @@
 FROM php:8.2-cli AS vendor
 WORKDIR /app
 ENV COMPOSER_ALLOW_SUPERUSER=1
-# tools for composer to unzip archives
-RUN apt-get update && apt-get install -y git unzip zip && rm -rf /var/lib/apt/lists/*
 
-# bring in Composer binary
+# Install tools + zip build deps, then enable the zip extension
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      git unzip zip libzip-dev \
+ && docker-php-ext-configure zip \
+ && docker-php-ext-install zip \
+ && rm -rf /var/lib/apt/lists/*
+
+# Bring in Composer binary
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
-# install deps (no dev, no scripts)
+# Install PHP dependencies (no dev, no scripts)
 COPY composer.json composer.lock* ./
 RUN composer install \
     --no-dev \
@@ -19,13 +25,13 @@ RUN composer install \
     --no-progress \
     --no-scripts
 
-# copy app and optimize autoload
+# Copy the rest of the application and optimize autoload
 COPY . .
 RUN composer dump-autoload -o --classmap-authoritative --no-scripts
 
 
 # ================================================
-# Stage 2: Build caches/manifests under PHP 8.2
+# Stage 2: Build caches/manifests (PHP 8.2)
 # ================================================
 FROM bref/php-82-fpm:2 AS cache
 WORKDIR /var/task
@@ -46,6 +52,70 @@ WORKDIR /var/task
 COPY --from=cache /var/task /var/task
 RUN mkdir -p bootstrap/cache
 CMD ["public/index.php"]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# # ================================
+# # Stage 1: Build vendors with PHP 8.2
+# # ================================
+# FROM php:8.2-cli AS vendor
+# WORKDIR /app
+# ENV COMPOSER_ALLOW_SUPERUSER=1
+# # tools for composer to unzip archives
+# RUN apt-get update && apt-get install -y git unzip zip && rm -rf /var/lib/apt/lists/*
+
+# # bring in Composer binary
+# COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+
+# # install deps (no dev, no scripts)
+# COPY composer.json composer.lock* ./
+# RUN composer install \
+#     --no-dev \
+#     --prefer-dist \
+#     --no-interaction \
+#     --no-progress \
+#     --no-scripts
+
+# # copy app and optimize autoload
+# COPY . .
+# RUN composer dump-autoload -o --classmap-authoritative --no-scripts
+
+
+# # ================================================
+# # Stage 2: Build caches/manifests under PHP 8.2
+# # ================================================
+# FROM bref/php-82-fpm:2 AS cache
+# WORKDIR /var/task
+# COPY --from=vendor /app /var/task
+# ENV APP_ENV=production
+# ENV APP_DEBUG=false
+# RUN mkdir -p bootstrap/cache \
+#  && php artisan package:discover --ansi || true \
+#  && test -f bootstrap/cache/packages.php || php -r 'file_put_contents("bootstrap/cache/packages.php","<?php return [];");' \
+#  && test -f bootstrap/cache/services.php || php -r 'file_put_contents("bootstrap/cache/services.php","<?php return [];");'
+
+
+# # ===============================================
+# # Stage 3: Runtime for AWS Lambda (Bref PHP 8.2)
+# # ===============================================
+# FROM bref/php-82-fpm:2 AS production
+# WORKDIR /var/task
+# COPY --from=cache /var/task /var/task
+# RUN mkdir -p bootstrap/cache
+# CMD ["public/index.php"]
 
 
 
