@@ -2,7 +2,7 @@ name: Deploy to AWS ECR (Laravel → Lambda)
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   workflow_dispatch:
     inputs:
       run_migrations:
@@ -45,9 +45,9 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ secrets.AWS_REGION }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Log in to Amazon ECR
         run: |
@@ -71,7 +71,7 @@ jobs:
         run: |
           docker push ${{ env.IMAGE_TAG }}
 
-    #   Update the Lambda function to this new image
+      #   Update the Lambda function to this new image
       - name: Update Lambda with new image
         run: |
           aws lambda update-function-code \
@@ -81,54 +81,42 @@ jobs:
           echo "Lambda updated."
           aws lambda wait function-updated --function-name ${{ secrets.LAMBDA_NAME }}
 
-      # (Optional) Update Lambda environment variables in case you changed any
-      # UNCOMMENT and edit if you want CI to own env config:
-    #   - name: Update Lambda environment (optional)
-    #     run: |
-    #       aws lambda update-function-configuration \
-    #         --function-name ${{ secrets.LAMBDA_NAME }} \
-    #         --environment "Variables={
-    #           APP_ENV=production,
-    #           APP_DEBUG=false,
-    #           APP_URL=${{ secrets.APP_URL }},
-    #           APP_KEY=${{ secrets.APP_KEY }},
-    #           LOG_CHANNEL=stderr,
-    #           LOG_LEVEL=error,
-    #           APP_STORAGE=/tmp,
-    #           CACHE_STORE=file,
-    #           SESSION_DRIVER=cookie,
-    #           QUEUE_CONNECTION=sync,
-    #           FILESYSTEM_DISK=s3,
-    #           AWS_DEFAULT_REGION=${{ secrets.AWS_REGION }},
-    #           DB_CONNECTION=mysql,
-    #           DB_HOST=${{ secrets.DB_HOST }},
-    #           DB_PORT=3306,
-    #           DB_DATABASE=${{ secrets.DB_DATABASE }},
-    #           DB_USERNAME=${{ secrets.DB_USERNAME }},
-    #           DB_PASSWORD=${{ secrets.DB_PASSWORD }}
-    #         }" >/dev/null
-    #       echo "Lambda environment updated."
+            # Optional: jq makes JSON checks easy
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
 
-      # (Optional) Run migrations by invoking a **separate** Artisan Lambda
-      # This requires you to have an additional Lambda function that runs Bref console with CMD ["artisan"].
-    #   - name: Run migrations (optional)
-    #     if: ${{ inputs.run_migrations == true }}
-    #     run: |
-    #       PAYLOAD='{"command":"migrate","args":["--force"]}'
-    #       aws lambda invoke \
-    #         --function-name  ${{ secrets.ARTISAN_LAMBDA_NAME }} \
-    #         --payload        "$PAYLOAD" \
-    #         /tmp/migrate.json >/dev/null
-    #       cat /tmp/migrate.json
+      # Wait for API to be healthy (200 + {"ok":true})
+      - name: Smoke test API health
+        env:
+          HEALTH_URL: https://akc2pwkx6a.execute-api.us-east-1.amazonaws.com/prod/v1/api/health/rds-tcp
+        run: |
+          echo "Checking $HEALTH_URL"
+          # Try for ~150s total (30 * 5s). Tweak as needed.
+          for i in {1..30}; do
+            # capture body and status code
+            RESP="$(curl -sS -m 8 -w '\n%{http_code}' "$HEALTH_URL")" || RESP=$'\n000'
+            BODY="$(printf "%s" "$RESP" | head -n -1)"
+            CODE="$(printf "%s" "$RESP" | tail -n1)"
+            echo "Attempt $i: HTTP $CODE | $BODY"
 
-      # (Optional) Invalidate CloudFront cache
-    #   - name: Invalidate CloudFront Cache (optional)
-    #     if: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID != '' }}
-    #     run: |
-    #       aws cloudfront create-invalidation \
-    #         --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
-    #         --paths "/*" \
-    #         --region ${{ secrets.AWS_REGION }}
+            # health = HTTP 200 AND {"ok":true}
+            if [ "$CODE" = "200" ] && echo "$BODY" | jq -e '.ok == true' >/dev/null 2>&1; then
+              echo "✅ API health OK"
+              exit 0
+            fi
+
+            sleep 5
+          done
+
+          echo "❌ API health check failed."
+          exit 1
+
+      # If health fails, print the last few minutes of Lambda logs to help debug
+      - name: Tail Lambda logs on failure
+        if: failure()
+        run: |
+          aws logs tail /aws/lambda/${{ secrets.LAMBDA_NAME }} \
+            --since 10m --format short --region ${{ secrets.AWS_REGION }} || true
 
       - name: Notify deployment success
         run: echo "✅ Deployment to ECR successful!"
