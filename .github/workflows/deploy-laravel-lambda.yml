@@ -1,102 +1,105 @@
-name: Deploy to EC2 (Laravel)
+name: Deploy via SCP
 
 on:
   push:
-    branches: ["main"]
+    branches: [main] # ❗ change branch if needed
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production # prevents overlapping deploys
+  cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
+    env:
+      # Use the full commit SHA for the release dir (or shorten if you prefer)
+      RELEASE: ${{ github.sha }}
+      DEPLOY_PATH: /var/www/myapp # ❗ server base path (no trailing slash)
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Set release name
-        id: rel
-        run: echo "RELEASE=${GITHUB_SHA}" >> $GITHUB_ENV
-
-      - name: Add EC2 host key to known_hosts
+      - name: Show what we’re sending (debug)
         run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan -p "${{ secrets.EC2_PORT }}" -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
+          echo "Release: $RELEASE"
+          ls -la
 
-      - name: Upload code to EC2 (release dir)
+      - name: Upload via SCP (appleboy)
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          port: ${{ secrets.EC2_PORT }}
+          host: ${{ secrets.SSH_HOST }} # ❗ set in repo secrets
+          username: ${{ secrets.SSH_USER }} # ❗
+          key: ${{ secrets.SSH_KEY }} # ❗ private key
+          port: ${{ secrets.SSH_PORT }} # ❗ typically 22
+          timeout: 30s
+          command_timeout: 10m
+          overwrite: false
+          strip_components: 0
+          # Include "." then exclude with leading "!"
           source: |
             .
-            !.git/
-            !node_modules/
-            !vendor/
-            !storage/
+            !.git/**
+            !node_modules/**
+            !vendor/**
+            !storage/**
             !.env
-            !tests/
-          target: ${{ secrets.EC2_PATH }}/releases/${{ env.RELEASE }}
+            !tests/**
+          target: ${{ env.DEPLOY_PATH }}/releases/${{ env.RELEASE }}
 
-      - name: Run remote deploy steps
+      # OPTIONAL: run server-side steps (composer install, build, cache, etc.)
+      # Comment out what you don't need.
+      - name: Activate release (symlink & basic Laravel housekeeping)
         uses: appleboy/ssh-action@v1.0.3
-        env:
-          RELEASE: ${{ env.RELEASE }}
-          APP_PATH: ${{ secrets.EC2_PATH }}
-
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
-          port: ${{ secrets.EC2_PORT }}
-          script_stop: true
+          port: ${{ secrets.SSH_PORT }}
+          timeout: 30s
+          command_timeout: 15m
           script: |
-            set -e
-            RELEASE_DIR="$APP_PATH/releases/$RELEASE"
-            SHARED_DIR="$APP_PATH/shared"
-            CURRENT_LINK="$APP_PATH/current"
+            set -euo pipefail
+            BASE="${{ env.DEPLOY_PATH }}"
+            REL="${BASE}/releases/${{ env.RELEASE }}"
+            CUR="${BASE}/current"
 
-            # ensure shared dirs exist
-            mkdir -p "$SHARED_DIR/storage" "$SHARED_DIR/bootstrap/cache"
+            echo "Ensuring base directories exist…"
+            mkdir -p "${BASE}/releases" "${BASE}/shared/storage" "${BASE}/shared/vendor"
 
-            # link shared .env & storage into this release
-            ln -sfn "$SHARED_DIR/.env" "$RELEASE_DIR/.env"
-            rm -rf "$RELEASE_DIR/storage"
-            ln -sfn "$SHARED_DIR/storage" "$RELEASE_DIR/storage"
+            echo "Link shared storage & vendor into release…"
+            rm -rf "${REL}/storage" || true
+            ln -sfn "${BASE}/shared/storage" "${REL}/storage"
+            ln -sfn "${BASE}/shared/vendor" "${REL}/vendor"
 
-            # permissions (www-data runs php-fpm/nginx on Ubuntu)
-            chgrp -R www-data "$SHARED_DIR/storage" "$SHARED_DIR/bootstrap/cache" || true
-            chmod -R ug+rwx "$SHARED_DIR/storage" "$SHARED_DIR/bootstrap/cache" || true
-
-            # composer on the server
-            cd "$RELEASE_DIR"
-            if [ -n "$COMPOSER_AUTH" ]; then
-              echo "$COMPOSER_AUTH" > composer-auth.json
-              export COMPOSER_AUTH=$(cat composer-auth.json)
-            fi
-            composer install --no-dev --prefer-dist --optimize-autoloader
-
-            # Laravel optimize
-            php artisan key:generate --force || true
-            php artisan storage:link || true
-
-            if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
-              php artisan migrate --force
+            # If you keep .env outside the repo:
+            if [ -f "${BASE}/shared/.env" ]; then
+              ln -sfn "${BASE}/shared/.env" "${REL}/.env"
             fi
 
-            php artisan config:cache
-            php artisan route:cache
-            php artisan view:cache
+            # If this is a Laravel app, you can uncomment:
+            # cd "${REL}"
+            # php -v || true
+            # composer --version || true
+            # composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction
+            # php artisan storage:link || true
+            # php artisan config:cache || true
+            # php artisan route:cache || true
+            # php artisan view:cache || true
+            # php artisan migrate --force || true
 
-            # atomically switch "current" symlink
-            ln -sfn "$RELEASE_DIR" "$CURRENT_LINK"
-            chown -h $USER:www-data "$CURRENT_LINK" || true
+            echo "Atomically switching current symlink…"
+            ln -sfn "${REL}" "${CUR}"
 
-            # restart queue workers (no sudo needed)
-            php artisan queue:restart || true
-
-            # optional: reload services if this user has permission
-            # sudo systemctl reload php8.1-fpm || true
+            # Reload services if needed (uncomment as appropriate):
+            # sudo systemctl reload php8.2-fpm || true
             # sudo systemctl reload nginx || true
 
-            echo "Deployed release: $RELEASE"
+            echo "Deployment complete: ${{ env.RELEASE }}"
