@@ -1,122 +1,102 @@
-name: Deploy to AWS ECR (Laravel → Lambda)
+name: Deploy to EC2 (Laravel)
 
 on:
   push:
     branches: ["main"]
-  workflow_dispatch:
-    inputs:
-      run_migrations:
-        description: "Run php artisan migrate --force via Artisan Lambda"
-        type: boolean
-        default: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # (Optional) If you build assets with Node (Vite/Mix), keep these three steps.
-      # Otherwise, remove them.
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: Set release name
+        id: rel
+        run: echo "RELEASE=${GITHUB_SHA}" >> $GITHUB_ENV
+
+      - name: Add EC2 host key to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "${{ secrets.EC2_PORT }}" -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Upload code to EC2 (release dir)
+        uses: appleboy/scp-action@v0.1.7
         with:
-          node-version: 18
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.EC2_PORT }}
+          source: |
+            .
+            !.git/
+            !node_modules/
+            !vendor/
+            !storage/
+            !.env
+            !tests/
+          target: ${{ secrets.EC2_PATH }}/releases/${{ env.RELEASE }}
 
-      - name: Cache Node.js dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
-
-      - name: Install frontend dependencies (optional)
-        run: |
-          if [ -f package.json ]; then
-            npm ci
-            # npm run build   # uncomment if you compile assets into /public
-          fi
-
-      # AWS creds (using long-lived keys like your example).
-      # If you can, prefer OIDC in the future.
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Log in to Amazon ECR
-        run: |
-          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} |
-          docker login --username AWS --password-stdin ${{ secrets.ECR_REPOSITORY_URI }}
-
-      # Build & tag image (Dockerfile should use Bref php-81-fpm like we discussed)
-      - name: Build and tag Docker image
-        run: |
-          IMAGE_TAG=${{ secrets.ECR_REPOSITORY_URI }}:${{ github.sha }}
-          docker build -t laravel-app .
-          docker tag laravel-app:latest $IMAGE_TAG
-          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
-
-      # (Optional) Peek inside the built image to sanity-check paths
-      - name: List files in container image
-        run: |
-          docker run --rm --entrypoint "" ${{ env.IMAGE_TAG }} ls -al /var/task
-
-      - name: Push Docker image to ECR
-        run: |
-          docker push ${{ env.IMAGE_TAG }}
-
-      #   Update the Lambda function to this new image
-      - name: Update Lambda with new image
-        run: |
-          aws lambda update-function-code \
-            --function-name ${{ secrets.LAMBDA_NAME }} \
-            --image-uri       ${{ env.IMAGE_TAG }} \
-            --region          ${{ secrets.AWS_REGION }} >/dev/null
-          echo "Lambda updated."
-          aws lambda wait function-updated --function-name ${{ secrets.LAMBDA_NAME }}
-
-            # Optional: jq makes JSON checks easy
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
-
-      # Wait for API to be healthy (200 + {"ok":true})
-      - name: Smoke test API health
+      - name: Run remote deploy steps
+        uses: appleboy/ssh-action@v1.0.3
         env:
-          HEALTH_URL: https://akc2pwkx6a.execute-api.us-east-1.amazonaws.com/prod/v1/api/health/rds-tcp
-        run: |
-          echo "Checking $HEALTH_URL"
-          # Try for ~150s total (30 * 5s). Tweak as needed.
-          for i in {1..30}; do
-            # capture body and status code
-            RESP="$(curl -sS -m 8 -w '\n%{http_code}' "$HEALTH_URL")" || RESP=$'\n000'
-            BODY="$(printf "%s" "$RESP" | head -n -1)"
-            CODE="$(printf "%s" "$RESP" | tail -n1)"
-            echo "Attempt $i: HTTP $CODE | $BODY"
+          RELEASE: ${{ env.RELEASE }}
+          APP_PATH: ${{ secrets.EC2_PATH }}
 
-            # health = HTTP 200 AND {"ok":true}
-            if [ "$CODE" = "200" ] && echo "$BODY" | jq -e '.ok == true' >/dev/null 2>&1; then
-              echo "✅ API health OK"
-              exit 0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.EC2_PORT }}
+          script_stop: true
+          script: |
+            set -e
+            RELEASE_DIR="$APP_PATH/releases/$RELEASE"
+            SHARED_DIR="$APP_PATH/shared"
+            CURRENT_LINK="$APP_PATH/current"
+
+            # ensure shared dirs exist
+            mkdir -p "$SHARED_DIR/storage" "$SHARED_DIR/bootstrap/cache"
+
+            # link shared .env & storage into this release
+            ln -sfn "$SHARED_DIR/.env" "$RELEASE_DIR/.env"
+            rm -rf "$RELEASE_DIR/storage"
+            ln -sfn "$SHARED_DIR/storage" "$RELEASE_DIR/storage"
+
+            # permissions (www-data runs php-fpm/nginx on Ubuntu)
+            chgrp -R www-data "$SHARED_DIR/storage" "$SHARED_DIR/bootstrap/cache" || true
+            chmod -R ug+rwx "$SHARED_DIR/storage" "$SHARED_DIR/bootstrap/cache" || true
+
+            # composer on the server
+            cd "$RELEASE_DIR"
+            if [ -n "$COMPOSER_AUTH" ]; then
+              echo "$COMPOSER_AUTH" > composer-auth.json
+              export COMPOSER_AUTH=$(cat composer-auth.json)
+            fi
+            composer install --no-dev --prefer-dist --optimize-autoloader
+
+            # Laravel optimize
+            php artisan key:generate --force || true
+            php artisan storage:link || true
+
+            if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
+              php artisan migrate --force
             fi
 
-            sleep 5
-          done
+            php artisan config:cache
+            php artisan route:cache
+            php artisan view:cache
 
-          echo "❌ API health check failed."
-          exit 1
+            # atomically switch "current" symlink
+            ln -sfn "$RELEASE_DIR" "$CURRENT_LINK"
+            chown -h $USER:www-data "$CURRENT_LINK" || true
 
-      # If health fails, print the last few minutes of Lambda logs to help debug
-      - name: Tail Lambda logs on failure
-        if: failure()
-        run: |
-          aws logs tail /aws/lambda/${{ secrets.LAMBDA_NAME }} \
-            --since 10m --format short --region ${{ secrets.AWS_REGION }} || true
+            # restart queue workers (no sudo needed)
+            php artisan queue:restart || true
 
-      - name: Notify deployment success
-        run: echo "✅ Deployment to ECR successful!"
+            # optional: reload services if this user has permission
+            # sudo systemctl reload php8.1-fpm || true
+            # sudo systemctl reload nginx || true
+
+            echo "Deployed release: $RELEASE"

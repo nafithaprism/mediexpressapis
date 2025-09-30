@@ -180,18 +180,11 @@ Route::get('country/{route}', 'CountryController@country');
 Route::post('forget-password', 'UserController@forgetPassword');
 # End Forget Password
 
-Route::post('discounts/apply', [DiscountController::class, 'apply'])
+Route::post('discounts/apply', 'DiscountController@apply')
     ->name('discounts.apply');
 
-// Admin CRUD (protect as needed)
 Route::middleware('auth:sanctum')->group(function () {
-    Route::apiResource('discounts', DiscountController::class);
-});
-
-// Admin / Staff (protect as you prefer: Sanctum/Passport)
-Route::middleware('auth:sanctum')->group(function () {
-    // Full CRUD (index, store, show, update, destroy)
-    Route::apiResource('discounts', DiscountController::class);
+    Route::apiResource('discounts', 'DiscountController');
 });
 
 Route::group(['prefix' => 'auth'], function ($router) {

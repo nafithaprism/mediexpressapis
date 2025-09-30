@@ -26,49 +26,83 @@ class UploadController extends Controller
         $this->bunnyCDNStorage = new BunnyCDNStorage($this->storageZone, $this->access_key, "sg");
     }
 
-    public function upload_media(UploadRequest $request)
-    {
+  public function upload_media(UploadRequest $request)
+{
+    $data   = $request->input('data');                 // expect array of JSON strings
+    $images = $request->file('images');                // expect array of UploadedFile
 
-        $data = $request['data'];
-
-
-        $images = $request->file('images');
-
-        $files = [];
-
-        if ($data && $images) {
-
-            $i = 0;
-            foreach ($data as $d) {
-                $d = json_decode($d, true);
-
-                $type = $d['is360'] === 'false' ?  'image' : '3d';
-                $folder = $type === 'image' ? 'images' : '360';
-                $without_ext_name = $this->slugify(preg_replace('/\..+$/', '', $images[$i]->getClientOriginalName()));
-
-                $name = $without_ext_name . '-' . time() . rand(1, 100) . '.' . $images[$i]->extension();
-                $files[$i]['avatar'] = $name;
-                $files[$i]['url'] = $this->base_URL . $name;
-                $files[$i]['alt_tag'] = $d['alt_text'];
-                $files[$i]['type'] = $type;
-                $files[$i]['isImg'] = isset($d['isImg']) ? ($d['isImg']) : 1;
-
-                if ($this->bunnyCDNStorage->uploadFile($images[$i]->getPathName(), $this->storageZone . "/images/{$name}")) {
-
-                    $isUploaded = Upload::create(['avatar' => $files[$i]['url'], 'url' => $name, 'alt_tag' => $files[$i]['alt_tag'], 'type' => $type, 'isImg' => $files[$i]['isImg']]);
-
-                    echo json_encode(['message' => 'media has uploaded.', 'data' => $isUploaded,  'status' => 200]);
-                } else {
-
-                    return $errors = ['message' => 'server issue', 'status' => 404, 'image_name' => $file->getClientOrignalName()];
-                }
-
-                $i++;
-            }
-        } else {
-            echo json_encode(['message' => 'files are not uploaded', 'status' => 404]);
-        }
+    if (!$data || !$images) {
+        return response()->json(['message' => 'files are not uploaded', 'status' => 404], 404);
     }
+
+    // Ensure both arrays align
+    $count = min(count($data), count($images));
+    if ($count === 0) {
+        return response()->json(['message' => 'no files found', 'status' => 404], 404);
+    }
+
+    $files = [];
+
+    for ($i = 0; $i < $count; $i++) {
+        $d = json_decode($data[$i], true) ?: [];
+
+        $is360  = isset($d['is360']) ? $d['is360'] : 'false';
+        $type   = $is360 === 'false' ? 'image' : '3d';
+        $folder = $type === 'image' ? 'images' : '360';
+
+        // Use the actual file we’re processing
+        /** @var \Illuminate\Http\UploadedFile $file */
+        $file = $images[$i];
+
+        // Base name (without extension), slugged
+        $originalName      = $file->getClientOriginalName(); // <- corrected spelling
+        $withoutExt        = preg_replace('/\..+$/', '', $originalName);
+        $withoutExtSlugged = $this->slugify($withoutExt);
+
+        // Build final filename
+        $name = $withoutExtSlugged . '-' . time() . rand(1, 100) . '.' . $file->extension();
+
+        // Use the folder in both URL and storage path
+        $files[$i] = [
+            'avatar' => $name,
+            'url'    => rtrim($this->base_URL, '/') . '/' . $folder . '/' . $name,
+            'alt_tag'=> $d['alt_text'] ?? '',
+            'type'   => $type,
+            'isImg'  => isset($d['isImg']) ? (int)$d['isImg'] : 1,
+        ];
+
+        // Upload to Bunny (path should include the folder)
+        $uploaded = $this->bunnyCDNStorage->uploadFile(
+            $file->getPathName(),
+            $this->storageZone . "/{$folder}/{$name}"
+        );
+
+        if (!$uploaded) {
+            // Use the correct variable and correct method name
+            return response()->json([
+                'message'    => 'server issue',
+                'status'     => 500,
+                'image_name' => $file->getClientOriginalName(), // <- corrected
+            ], 500);
+        }
+
+        // Persist record (note: save the same URL you expose)
+        $isUploaded = Upload::create([
+            'avatar' => $files[$i]['url'],   // public URL
+            'url'    => $name,               // raw name (or store the full path if you prefer)
+            'alt_tag'=> $files[$i]['alt_tag'],
+            'type'   => $type,
+            'isImg'  => $files[$i]['isImg'],
+        ]);
+    }
+
+    return response()->json([
+        'message' => 'media uploaded',
+        'data'    => $files, // or collect DB rows if you want
+        'status'  => 200
+    ], 200);
+}
+
     public function files(Request $request)
     {
         $file = $request->file('files');
