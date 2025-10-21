@@ -3,10 +3,11 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\DiscountController;
-
+use App\Http\Controllers\FrontProductController;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-
+use App\Http\Controllers\ReviewController;
+use App\Http\Controllers\FrontController;
 
 Route::get('health/rds-tcp', function () {
     $host  = env('DB_HOST');
@@ -151,20 +152,40 @@ Route::post('blog-search', 'FrontController@blogSearch');
 
 
 #Front Product
-Route::post('product-list', 'FrontProductController@productList');
-Route::post('product-filter', 'FrontProductController@productFilter');
-Route::get('pop-up-product-detail/{id}/{country_id}', 'FrontProductController@popUpList');
-Route::get('all-categories', 'FrontProductController@allCategory');
-Route::get('all-brands', 'FrontProductController@allBrand');
-Route::post('brand-filter', 'FrontProductController@brandFilter');
-Route::post('price-filter', 'FrontProductController@priceFilter');
-Route::post('reviews', 'ReviewController@store');
-Route::post('product-detail', 'FrontProductController@productDetail');
-Route::post('product-sort-by', 'FrontProductController@sortBy');
-Route::get('deals/{country}', 'FrontProductController@deals');
-Route::post('promotions', 'FrontController@promotion');
-Route::post('shop', 'FrontProductController@shop');
-Route::post('shop-category-filter', 'FrontProductController@shopFilter');
+// Front Product
+Route::post('product-list',         [FrontProductController::class, 'productList'])->name('front.product-list');
+Route::post('product-filter',       [FrontProductController::class, 'productFilter'])->name('front.product-filter');
+Route::get('pop-up-product-detail/{id}/{country_id}', [FrontProductController::class, 'popUpList'])->name('front.popup');
+Route::get('all-categories',        [FrontProductController::class, 'allCategory'])->name('front.all-categories');
+Route::get('all-brands',            [FrontProductController::class, 'allBrand'])->name('front.all-brands');
+Route::post('brand-filter',         [FrontProductController::class, 'brandFilter'])->name('front.brand-filter');
+Route::post('price-filter',         [FrontProductController::class, 'priceFilter'])->name('front.price-filter');
+Route::post('product-detail',       [FrontProductController::class, 'productDetail'])->name('front.product-detail');
+Route::post('shop',                 [FrontProductController::class, 'shop'])->name('front.shop');
+Route::post('shop-category-filter', [FrontProductController::class, 'shopFilter'])->name('front.shop-category-filter');
+Route::post('reviews', [ReviewController::class, 'store']);
+Route::post('product-detail', [FrontProductController::class, 'productDetail']);
+Route::post('product-sort-by', [FrontProductController::class, 'sortBy']);
+Route::get('deals/{country}', [FrontProductController::class, 'deals']);
+Route::post('promotions', [FrontController::class, 'promotion']);
+Route::post('shop', [FrontProductController::class, 'shop']);
+Route::post('shop-category-filter', [FrontProductController::class, 'shopFilter']);
+
+
+
+
+
+
+
+
+
+//Route::post('reviews', 'ReviewController@store');
+//Route::post('product-detail', 'FrontProductController@productDetail');
+//Route::post('product-sort-by', 'FrontProductController@sortBy');
+//Route::get('deals/{country}', 'FrontProductController@deals');
+//Route::post('promotions', 'FrontController@promotion');
+//Route::post('shop', 'FrontProductController@shop');
+//Route::post('shop-category-filter', 'FrontProductController@shopFilter');
 
 
 Route::post('contact-us-form', 'FormHandlerController@store');

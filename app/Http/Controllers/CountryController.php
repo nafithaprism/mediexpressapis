@@ -18,26 +18,31 @@ class CountryController extends Controller
 
     public function store(Request $request)
     {
-        $create = [
-            'name' => $request->name,
-            'route' => $request->route,
-            'standard_shipping_charges' => $request->standard_shipping_charges,
-            'express_shipping_charges' => $request->express_shipping_charges,
-            'currency' => $request->currency,
-        ];
+      
 
-        if (Country::where('id', $request->id)->exists()) {
+$data = [
+        'countryName'         => $request->input('countryName'),
+        'route'               => $request->input('route'),
+        'currency'            => $request->input('currency'),
+        'weightBasedShipping' => $request->input('weightBasedShipping'),
+    ];
 
-            $country = Country::where('id', $request->id)->update($create);
-        } else {
+    if ($request->filled('id') && \App\Models\Country::where('id', $request->id)->exists()) {
+        $country = \App\Models\Country::find($request->id);
+        $country->update($data);
+        $message = 'Country updated successfully';
+        $code = 200;
+    } else {
+        $country = \App\Models\Country::create($data);
+        $message = 'Country created successfully';
+        $code = 201;
+    }
 
-            $country = Country::create($create);
-        }
-        if ($country) {
-            return response()->json('Country Created Successfully');
-        } else {
-            return response()->json('Something went wrong');
-        }
+    return response()->json(['message' => $message, 'data' => $country], $code);
+
+
+
+
     }
 
 
@@ -65,14 +70,16 @@ class CountryController extends Controller
         }
     }
 
-    public function country($route){
+   
 
-        $country = Country::where('route',$route)->select('id','name','route','standard_shipping_charges','express_shipping_charges')->first();
-        if ($country) {
-            return response()->json($country);
-        } else {
-            return response()->json('Something went wrong');
-        }
-
+     public function country($route)
+{
+    $country = \App\Models\Country::where('route', $route)->first();
+    if (!$country) {
+        return response()->json(['message' => 'Not found'], 404);
     }
+    return response()->json($country);
+}
+
+    
 }

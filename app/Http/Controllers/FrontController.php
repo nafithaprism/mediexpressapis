@@ -135,6 +135,7 @@ class FrontController extends Controller
                                     ->select('id', 'name', 'currency');
                             }])->select('id', 'product_id', 'country_id', 'actual_price' ,'sale_price');
                         }])
+			->where('status', 1) // <<< ONLY ACTIVE PRODUCTS
                         ->select('id', 'name', 'route', 'featured_img')
                         ->get();
        
@@ -155,6 +156,7 @@ class FrontController extends Controller
                                 $q->select('id', 'name', 'currency');
                             }])->select('id', 'product_id', 'country_id', 'actual_price' ,'sale_price');
                         }])
+			->where('status', 1) // <<< ONLY ACTIVE PRODUCTS
                         ->select('id', 'name', 'route', 'featured_img')
                         ->get();
         
@@ -186,37 +188,66 @@ class FrontController extends Controller
     }
 
 
-    public function globalSearch(Request $request)
-    {
-        $product = Product::select('id','name',  'route')
-                                ->where('name', 'like', '%' . $request->get('query') . '%')
-                                ->with('category', function ($q) {
-                                    $q->get();
-                                })->get();
-        $category = Category::select('name', 'route' ,'id')->where('name', 'like', '%' . $request->get('query') . '%')->first();
-        if($category != null){
-            
-            $products = ProductCategory::where('category_id' , $category['id'])->with('products' , function ($q) {
-                    $q->select('id','name' , 'route')->with('category');
-                    
-            })->get();
-            foreach($products as $key => $value){
+    
 
-                $product[$key] = $value['products'];
 
-            }
-           
 
-        }
-        return response()->json(['products' => $product, 'category' => $category]);
+
+public function globalSearch(Request $request)
+{
+    $term = trim((string) $request->input('query', ''));
+
+    if ($term === '') {
+        return response()->json(['products' => [], 'category' => null]);
     }
+
+    $base = Product::query()
+        ->select('id', 'name', 'route')
+        ->whereIn('status', [1, '1']) // ensure only active products
+        ->with(['category:id,name,route']);
+
+    $byName = (clone $base)
+        ->where('name', 'like', "%{$term}%")
+        ->get();
+
+    $category = Category::select('id', 'name', 'route')
+        ->where('name', 'like', "%{$term}%")
+        ->first();
+
+    $byCategory = collect();
+    if ($category) {
+        $byCategory = (clone $base)
+            ->whereHas('category', function ($q) use ($category) {
+                $q->where('categories.id', $category->id);
+            })
+            ->get();
+    }
+
+    $products = $byName->merge($byCategory)->unique('id')->values();
+
+    return response()->json([
+        'products' => $products,
+        'category' => $category,
+    ]);
+}
+
+
+
+
+
+
+
+
+
 
     public function promotion(Request $request){
         $countryId = Country::where('name' , $request->name)->pluck('id');
         $id = ProductPriceVariation::where('country_id',$countryId)->whereNotNull('sale_price')->pluck('product_id');
         $products = Product::whereIn('id', $id )->with('category')->with('price' , function ($q) use ($countryId){
             $q->where('country_id' , $countryId)->select('id','product_id','country_id', 'actual_price','sale_price' ,'deal_price')->with('country:id,name,currency')->get();
-        })->select('id','name','route','featured_img')->get();
+        })
+ 		 ->where('status', 1)
+		->select('id','name','route','featured_img')->get();
         $data = [];
         if ($products->isNotEmpty()) {
             $reviews = Review::whereIn('product_id', $id)

@@ -176,35 +176,52 @@ class FrontProductController extends Controller
     }
 
 
-    public function productList(Request $request)
-    {
-        $countryId = $this->country($request);
-        $products = [];
-        $categoryId = Category::where('route', $request->category)->value('id');
-        $productCategory = ProductCategory::where('category_id', $categoryId)->get();
-        
-        foreach ($productCategory as $key => $value) {
-            $products['product'][$key] = Product::with(['price' => function ($query) use ($countryId) {
-                $query->where('country_id', $countryId)->with('country:id,currency,name');
-            }, 'category', 'subCategory', 'childCategory'])
-                ->select('id', 'route', 'brand_id', 'name', 'featured_img')
-                ->find($value['product_id']);
-        }
-        
-       
-        $product = $this->reviewCount($products);
+  public function productList(Request $request)
+{
+    $countryId = $this->country($request);
 
-        
-        if( $product){
-            
-            return parent::returnData($product, 200);
-
-        }else{
-
-            return response()->json([], 200);
-
-        }
+    // 1) Resolve category by route
+    $categoryId = Category::where('route', $request->category)->value('id');
+    if (!$categoryId) {
+        return response()->json([], 200);
     }
+
+    // 2) All product IDs in that category
+    $productIds = ProductCategory::where('category_id', $categoryId)
+        ->pluck('product_id')
+        ->filter()
+        ->unique();
+
+    if ($productIds->isEmpty()) {
+        return response()->json([], 200);
+    }
+
+    // 3) Fetch products in ONE query, only status=1
+    $products = Product::whereIn('id', $productIds)
+        ->where('status', 1) // ← only active products
+        ->with([
+            'price' => function ($query) use ($countryId) {
+                $query->where('country_id', $countryId)
+                      ->with('country:id,currency,name');
+            },
+            'category',
+            'subCategory',
+            'childCategory',
+        ])
+        ->select('id', 'route', 'brand_id', 'name', 'featured_img')
+        ->get();
+
+    if ($products->isEmpty()) {
+        return response()->json([], 200);
+    }
+
+    // 4) If your reviewCount() expects ['product' => collection]
+    $wrapped = ['product' => $products];
+    $withReviews = $this->reviewCount($wrapped);
+
+    return parent::returnData($withReviews, 200);
+}
+
 
 
 
@@ -258,41 +275,77 @@ class FrontProductController extends Controller
 
  
 
-    public function deals($country)
-    {
+      
 
-        $country = Country::where('name', $country)->first();
 
-        if ($country) {
-            $countryId = $country->id;
-        } else {
-            // Handle case when country is not found, maybe set default country ID
-            $countryId = '13'; // Assuming default country ID
+
+
+
+
+
+
+
+
+
+public function deals($country)
+{
+    // 1) Resolve country id; fallback to 13 if not found
+    $countryId = optional(Country::where('name', $country)->first())->id ?? 13;
+
+    // 2) Get active deals for the resolved country
+    $deals = Deal::where('status', 1)
+        ->where('country_id', $countryId)
+        ->get();
+
+    // 3) If none, fallback to default country 13
+    if ($deals->isEmpty()) {
+        $countryId = 13;
+        $deals = Deal::where('status', 1)
+            ->where('country_id', $countryId)
+            ->get();
+
+        if ($deals->isEmpty()) {
+            // Nothing to return at all
+            return parent::returnData(['product' => []], 200);
         }
-
-        $data = Deal::where('status', 1)->where('country_id',$countryId)->get();
-        if(empty($data)){
-
-              return parent::returnStatus($data, 200);
-        }else{
-            $countryId = '13'; 
-            $data = Deal::where('status', 1)->where('country_id',$countryId)->get();
-        }
-
-
-        $product = [];
-        foreach ($data as $key => $value) {
-            $product['product'][$key] = Product::where('id', $value['product_id'])
-                                ->with(['price' => function ($query) use ($countryId) {
-                                    $query->where('country_id', $countryId)->with('country:id,currency,name');
-                                }, 'category'])
-                                ->select('id', 'name', 'route', 'featured_img')
-                                ->first();
-        }
-        $product = $this->reviewCount($product);
-        return parent::returnData($product, 200);
-
     }
+
+    // 4) Collect product ids from deals (unique)
+    $productIds = $deals->pluck('product_id')->unique()->values();
+
+    // 5) Fetch ONLY active products (status=1) and prices for the chosen country
+    $products = Product::whereIn('id', $productIds)
+        ->where('status', 1) // << only active products
+        ->with([
+            'price' => function ($q) use ($countryId) {
+                $q->where('country_id', $countryId)
+                  ->with('country:id,currency,name');
+            },
+            'category'
+        ])
+        ->select('id', 'name', 'route', 'featured_img')
+        ->get();
+
+    // 6) Shape payload for your existing reviewCount() helper
+    $payload = ['product' => $products];
+
+    // 7) Add average review score to each product
+    $payload = $this->reviewCount($payload);
+
+    return parent::returnData($payload, 200);
+}
+
+
+
+
+
+
+
+
+
+
+
+
 
 
     // Product Detail Data
@@ -396,6 +449,7 @@ class FrontProductController extends Controller
             $products = Product::with(['price' => function ($query) use ($countryId) {
                                         $query->where('country_id', $countryId)->with('country:id,currency,name');
                                     }, 'category'])
+				     ->where('status', 1)
                                     ->select('id', 'route', 'brand_id', 'name', 'featured_img')
                                     ->get();
            $response = [];
