@@ -22,22 +22,16 @@ class Country extends Model
         'weight_based_shipping' => 'array',
     ];
 
-    protected $appends = [
-        'weightBasedShipping',
-    ];
-
-    public function getWeightBasedShippingAttribute(): ?array
+    
+    public function getWeightBasedShippingAttribute(): array
     {
-        return json_decode($this->attributes['weight_based_shipping'] ?? null, true);
-    }
-
-    public function setWeightBasedShippingAttribute($value): void
-    {
-        if (is_string($value)) {
-            $decoded = json_decode($value, true);
-            $this->attributes['weight_based_shipping'] = json_encode($decoded ?? []);
-        } else {
-            $this->attributes['weight_based_shipping'] = json_encode($value ?? []);
+        $value = $this->attributes['weight_based_shipping'] ?? null;
+        
+        if (!$value || $value === 'null') {
+            return [];
         }
+        
+        $decoded = json_decode($value, true);
+        return $decoded ?? [];
     }
 }
