@@ -8,39 +8,30 @@ use Illuminate\Database\Eloquent\Model;
 class Country extends Model
 {
     use HasFactory;
+    
     protected $table = 'countries';
-     protected $fillable = [
-        'name',            // mapped to countryName in API via accessors
+    
+    protected $fillable = [
+        'name',
         'route',
         'currency',
         'weight_based_shipping',
     ];
 
- protected $casts = [
-        'weight_based_shipping' => 'array', // JSON <-> array
+    protected $casts = [
+        'weight_based_shipping' => 'array',
     ];
 
-protected $appends = [
-        'countryName',
+    protected $appends = [
         'weightBasedShipping',
     ];
 
- public function getCountryNameAttribute(): ?string
+    public function getWeightBasedShippingAttribute(): ?array
     {
-        return $this->name;
+        return json_decode($this->attributes['weight_based_shipping'] ?? null, true);
     }
 
-public function getWeightBasedShippingAttribute(): ?array
-{
-    return json_decode($this->attributes['weight_based_shipping'] ?? null, true);
-}
-
-public function setCountryNameAttribute($value): void
-    {
-        $this->attributes['name'] = $value;
-    }
-
-public function setWeightBasedShippingAttribute($value): void
+    public function setWeightBasedShippingAttribute($value): void
     {
         if (is_string($value)) {
             $decoded = json_decode($value, true);
@@ -49,16 +40,4 @@ public function setWeightBasedShippingAttribute($value): void
             $this->attributes['weight_based_shipping'] = json_encode($value ?? []);
         }
     }
-
-
-
-
-
-
-
-
-
-
-
-
 }
