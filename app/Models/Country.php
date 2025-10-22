@@ -31,9 +31,9 @@ protected $appends = [
     }
 
 public function getWeightBasedShippingAttribute(): ?array
-    {
-        return $this->weight_based_shipping;
-    }
+{
+    return json_decode($this->attributes['weight_based_shipping'] ?? null, true);
+}
 
 public function setCountryNameAttribute($value): void
     {
