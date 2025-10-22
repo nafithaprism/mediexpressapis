@@ -20,7 +20,7 @@ class CountryController extends Controller
             'name'                => $request->input('name'),  // CHANGED
             'route'               => $request->input('route'),
             'currency'            => $request->input('currency'),
-            'weight_based_shipping' => $request->input('weightBasedShipping'),  // CHANGED to snake_case for database
+            'weight_based_shipping' => $request->input('weight_based_shipping'),  // CHANGED to snake_case for database
         ];
 
         if ($request->filled('id') && Country::where('id', $request->id)->exists()) {
