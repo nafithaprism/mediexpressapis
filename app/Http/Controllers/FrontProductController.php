@@ -394,17 +394,30 @@ public function deals($country)
             $countryId = $this->country($request);
 
             $product = Product::where('route', $request['route'])
-                ->with(['price' => function ($query) use ($countryId) {
-                    $query->where('country_id', $countryId)
-                        ->with('country:id,currency,standard_shipping_charges,express_shipping_charges');
-                }, 'category', 'subCategory', 'childCategory'])
-                ->first();
-            $product['shipping_charges'] = $product['price'][0]['country']['standard_shipping_charges'];
-            $product['express_charges'] = $product['price'][0]['country']['express_shipping_charges'];
+        ->with(['price' => function ($query) use ($countryId) {
+            $query->where('country_id', $countryId)
+                ->with('country:id,currency,weight_based_shipping'); // CHANGED: removed old columns
+        }, 'category', 'subCategory', 'childCategory'])
+        ->first();
 
-            if (!$product) {
-                return response()->json(['error' => 'No Product found', 'code' => 404]);
-            }
+    if (!$product) {
+        return response()->json(['error' => 'No Product found', 'code' => 404]);
+    }
+
+    // NEW: Get shipping charges from weight_based_shipping array
+    $weightBasedShipping = $product['price'][0]['country']['weight_based_shipping'] ?? [];
+    
+    // Set default shipping charges (you can adjust logic based on your needs)
+    $product['shipping_charges'] = !empty($weightBasedShipping) 
+        ? $weightBasedShipping[0]['standard'] ?? 0 
+        : 0;
+    
+    $product['express_charges'] = !empty($weightBasedShipping) 
+        ? $weightBasedShipping[0]['express'] ?? 0 
+        : 0;
+
+    // Pass the full weight_based_shipping array if frontend needs it
+    $product['weight_based_shipping'] = $weightBasedShipping;
 
 
             $reviews = Review::where('product_id', $product['id'])->where('status', 1)->get();
